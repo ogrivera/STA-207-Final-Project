@@ -1,0 +1,442 @@
+---
+title: "National and Seasonal Effects on COVID Deaths "
+author: "Oscar Rivera"
+date: "3/1/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+library(lubridate)
+library(gplots)
+library(car)
+library(MASS)
+library(tidyverse)
+```
+
+```{r include=FALSE}
+covid <- read.csv("https://covid19.who.int/WHO-COVID-19-global-data.csv")
+```
+
+# Introduction
+
+ When the COVID-19 virus made its presence in North America, it was very quick 
+to make a negative impact on the nations in this continent, with those nations 
+being the United States, Canada, and Mexico. Having settled in these nations, 
+the virus brought a significant number of infections and deaths to those living in these 
+nations within first two years of its presence. Throughout these two years, there were certain 
+time periods in which the number of deaths due to COVID rose 
+up drastically. Furthermore, these number of deaths turned out to be much higher 
+for some nations. Since the virus became a threat to the world, The World Health 
+Organization (WHO) has been monitoring the number of deaths and cases per for 
+various countries around the globe. The data set which WHO uses to keep track 
+of these number can observed through the [weekly WHO COVID-19 update](https://www.who.int/emergencies/diseases/novel-coronavirus-2019/situation-reports).
+For this project, we will focus on determining 
+whether the nations in North America and the seasons of the year have major 
+effects on the number of deaths caused by COVID-19 during the pandemic. 
+
+# Background
+
+ The data set that we will be working with to answer the following question is 
+WHO COVID-19 data set that was mentioned in the introduction. Through this data 
+set, WHO has managed to keep track of the daily and cumulative number of COVID 
+cases and deaths between January 20202 to present day as well as for all nations 
+across the globe. 
+
+```{r echo=FALSE}
+#Shortening data to US, CA, and MX
+US <- which(covid$Country_code=="US")
+CA <- which(covid$Country_code=="CA")
+MX <- which(covid$Country_code=="MX")
+
+covid_NA <- covid[c(US,CA,MX),]
+```
+
+Since our question of interest is focused on countries in North America, we 
+minimized the observations to those involving the United States, Canada, and 
+Mexico. Around March 2020, the number of COVID cases and deaths became more 
+recognized in North America in the sense that the nations in this continent
+began taking serious measures to control for these number. 
+With this being said, I have restricted this data set to dates between March 1, 
+2020 to February 28, 2022. In addition, applying this restriction on the data 
+set give more flexibility to use appropriate methods in my analysis, which will 
+be discussed later. 
+
+```{r echo=FALSE}
+#Creating Month and Year variables
+covid_NA$Month <- month(covid_NA$Date_reported)
+covid_NA$Year <- year(covid_NA$Date_reported)
+
+Jan2020 <- which(covid_NA$Month==1 & covid_NA$Year==2020)
+Feb2020 <- which(covid_NA$Month==2 & covid_NA$Year==2020)
+
+covid_NA <- covid_NA[-c(Jan2020,Feb2020),]
+
+#Creating Season variable 
+covid_NA$Season <- c()
+n_T <- nrow(covid_NA)
+
+for (i in 1:n_T) {
+  if (covid_NA$Month[i] == 1 | covid_NA$Month[i] == 2 | covid_NA$Month[i] == 12){
+    covid_NA$Season[i] <- "Winter"
+  }
+  if (covid_NA$Month[i] == 3 | covid_NA$Month[i] == 4 | covid_NA$Month[i] == 5){
+    covid_NA$Season[i] <- "Spring"
+  }
+  if (covid_NA$Month[i] == 6 | covid_NA$Month[i] == 7 | covid_NA$Month[i] == 8){
+    covid_NA$Season[i] <- "Summer"
+  }
+  if (covid_NA$Month[i] == 9 | covid_NA$Month[i] == 10 | covid_NA$Month[i] == 11){
+    covid_NA$Season[i] <- "Fall"
+  }
+}
+covid_NA$Season <- as.factor(covid_NA$Season)
+covid_NA$Country_code <- as.factor(covid_NA$Country_code)
+
+covid_NA <- covid_NA[,-3]
+
+# Removing all dates of March 2022 and beyond
+March_2022 <- which(covid_NA$Month >= 3 & covid_NA$Year == 2022)
+covid_NA <- covid_NA[-March_2022,]
+
+rownames(covid_NA) <- 1:nrow(covid_NA)
+
+#Creating Case Fatality Ratio Variable
+covid_NA$New_CFR <- c()
+for (i in 1:nrow(covid_NA)) {
+  if(covid_NA$New_cases[i] == 0 ){
+    covid_NA$New_CFR[i] = 0 
+  }
+  else{
+    covid_NA$New_CFR[i] <- covid_NA$New_deaths[i]/covid_NA$New_cases[i]
+  }
+}
+#View(covid_NA)
+```
+
+To create a variable for season, we used the month number 
+of the dates listed in the data. All observations with month numbers 1, 2, or 
+12 are assigned. Winter for season, all dates with month numbers 3, 4, or 5 are 
+assigned Spring for season, all dates with month numbers 6, 7, or 8 are assigned 
+Summer for season, and all dates with month numbers 9, 10, and 11 are assigned 
+Fall for season. Using the number of deaths and the number of cases per day,
+we constructed a variable for case-fatality rate (CFR) per day, which is 
+defined as
+\[
+   CFR = \dfrac{\text{Number of COVID deaths per day}}{\text{Number of COVID deaths per day}}
+\]
+Viewing the WHO data set, one will notice that the for some dates, the number of
+cases are zero. For those dates, we set the CFR equal to zero. 
+
+# Exploratory Data Analysis
+
+ Restricting the WHO data to the United States, Canada, and Mexico and to the 
+dates March 1 2020 - February 28 2022, the modified
+data set contains `r nrow(covid_NA)` total observations.  
+
+## Time Series Plots
+
+To study the daily number of deaths, cases, and case-fatality rates due to COVID 
+within a span of two years, I created a times series plot of these numbers for 
+all three nations. 
+
+```{r echo=FALSE}
+US_NA <- which(covid_NA$Country_code=="US")
+CA_NA <- which(covid_NA$Country_code=="CA")
+MX_NA <- which(covid_NA$Country_code=="MX")
+
+t <- 1:length(covid_NA$New_deaths[US_NA])
+
+par(mfrow=c(2,2))
+plot(t,covid_NA$New_deaths[US_NA],type='l', main="Number of Deaths due to 
+     COVID-19", xlab="Time: March 1, 2020 - February 28, 2022", ylab="Number of Deaths")
+lines(t,covid_NA$New_deaths[CA_NA],type='l',col=3)
+lines(t,covid_NA$New_deaths[MX_NA],type='l',col=4)
+legend("topleft", legend = c("US","CA","MX"), lty=c(1,1,1), col=c(1,3,4),
+       cex=0.5)
+
+plot(t,covid_NA$New_cases[US_NA],type='l', main="Number of Cases due to 
+     COVID-19", xlab="Time: March 1, 2020 - February 28, 2022", ylab="Number of Deaths")
+lines(t,covid_NA$New_cases[CA_NA],type='l',col=3)
+lines(t,covid_NA$New_cases[MX_NA],type='l',col=4)
+legend("topleft", legend = c("US","CA","MX"), lty=c(1,1,1), col=c(1,3,4),
+       cex=0.5)
+#par(mfrow=c(1,1))
+
+plot(t,covid_NA$New_CFR[US_NA],type='l', main="Case Fatality Rate due to 
+     COVID-19", xlab="Time: March 1, 2020 - February 28, 2022", ylab="Case
+     Fatality Rate",ylim=c(0,.5))
+lines(t,covid_NA$New_CFR[CA_NA],type='l',col=3)
+lines(t,covid_NA$New_CFR[MX_NA],type='l',col=4)
+legend("topright", legend = c("US","CA","MX"), lty=c(1,1,1), col=c(1,3,4),
+       cex=0.5)
+par(mfrow=c(1,1))
+```
+
+Looking at the time series plot of the COVID deaths for the three nations 
+(topleft), all three countries appear to show similar trends. In all time 
+periods, Canada tends to have the lowest number of deaths despite being the 
+largest country from the three. Although it seems that COVID deaths are higher 
+for the US, one can see that these numbers for all three nations tend to 
+fluctuate roughly around the same time of the year. This may be an indication 
+that the seasons of each year may play a role on the number of deaths rising up 
+so rapidly. 
+In the time series plot of the COVID cases for the three countries (topright), 
+the US tends to have the highest number of cases. Further, it shows that the US
+had quite some time periods where the cases got significantly high. Near the 
+ending of this plot, one can observe that the cases for all three nation 
+increased around the same time period. 
+In the time series plot of the CFR for the three countries (bottomleft), Mexico
+appears to have the highest CFR. Note that Canada has a very high CFR value 
+for one of the dates. The reason for the CFR being that high is because on that 
+day, there two COVID cases and one COVID, leading to $CFR=1/2$. The date corresponding
+to this is March 11, 2020, which is the day Canada reported it's first COVID 
+death.
+
+## Sample Averages
+
+  To study the average numbers number of deaths caused by COVID in it's two-year 
+present, we provided these average numbers by country and season in the table 
+below. 
+
+```{r echo=FALSE}
+#aggregate(New_deaths~Country_code+Season,data=covid_NA,mean)
+aggregate(list(Deaths=covid_NA$New_deaths,Cases=covid_NA$New_cases,
+               CFR = covid_NA$New_CFR),
+          by=list(Country=covid_NA$Country_code,Season=covid_NA$Season), mean)
+```
+
+Viewing this table, one can observe that the average number of deaths and 
+average number of case due to COVID is highest for the US in all seasons. Notice 
+that in spring seasons, the average cases for Canada are higher than that
+of Mexico; however, the average cases are a lot lower for Canada during the 
+summer time. The highest average case fatality rate goes to Mexico during the 
+spring season. One interesting observation 
+to notice is that the average number of deaths and the average number 
+of cases caused by COVID tend to be highest for all three nation during the 
+winter time. 
+
+## Five-Number Summary
+
+We will now explore the five-number summary of COVID deaths, cases, and case-
+mortality rates. Recall that the five-number summary consist 5 measures,
+the minimum, 1st quartile (Q1), mediam (Q2), 3rd quartile (Q3), and the maximum. 
+
+The following table displays the five-number summary of COVID Deaths by country
+and season:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+covid_NA %>% 
+  group_by(Country_code,Season) %>% 
+  summarise(min = fivenum(New_deaths)[1],
+            Q1 = fivenum(New_deaths)[2],
+            median = fivenum(New_deaths)[3],
+            Q3 = fivenum(New_deaths)[4],
+            max = fivenum(New_deaths)[5])
+```
+
+The table shows that Spring is the only season where the minimum number 
+of COVID deaths for the three countries is 0. This is because most deaths 
+did not occur in these countries the begin of Spring in 2020. Notice that the
+median number of deaths for Mexico and the US are not too apart from each other.
+The spring time brought the maximum number of deaths for Canada, whereas the 
+winter time brought the number of maximum number of deaths for the US and 
+Mexico. 
+
+The next following table shows the five-number summary of COVID Cases by country
+and season:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+covid_NA %>% 
+  group_by(Country_code,Season) %>% 
+  summarise(min = fivenum(New_cases)[1],
+            Q1 = fivenum(New_cases)[2],
+            median = fivenum(New_cases)[3],
+            Q3 = fivenum(New_cases)[4],
+            max = fivenum(New_cases)[5])
+```
+
+Notice that the minimum number of cases for Canada in all seasons is 0. This 
+indicates that Canada had days in all seasons where no cases were reported. 
+Neither the US nor Mexico had 0 cases in any seasons during this two-year 
+timeline. The median number of cases appears to be highest for the US. 
+The table also shows that the median and maximum number of cases in all three 
+nations were highest during the winter time.
+
+From both tables, it appears that both nations and seasons may have some role
+in the number of deaths and cases. 
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+covid_NA %>% 
+  group_by(Country_code,Season) %>% 
+  summarise(min = round(fivenum(New_CFR)[1],4),
+            Q1 = round(fivenum(New_CFR)[2],4),
+            median = round(fivenum(New_CFR)[3],4),
+            Q3 = round(fivenum(New_CFR)[4],4),
+            max = round(fivenum(New_CFR)[5],4))
+```
+
+## Interaction Plot of Average COVID Deaths by Country and Season
+
+To examine the effects these seasons and nations have on the death number 
+created an interaction plot of the average COVID deaths numbers by season and
+nationality. 
+
+```{r echo=FALSE}
+interaction.plot(covid_NA$Country_code,covid_NA$Season,covid_NA$New_deaths,
+          xlab="Country", ylab="Average Number of Deaths by COVID",type="l", 
+          lty=1, lwd=2, legend=T,col=c(2,3,4,5),trace.label="Season" )
+```
+
+The differences in the heights of the four curves reflects the seasonal effects 
+on deaths, and the deviation from horizontal reflects the effects of nationality 
+on deaths. The plot indicates that there may be effects from nationality and 
+season present in the number deaths caused by COVID. 
+The curves for Winter, Fall, and Spring appear to have similar behaviors look 
+to be nearly parallel. However, one may notice that the curves for for Fall, 
+Spring, and Summer appear to intersect on the left portion of the 
+plot. Also, the curve for Summer intersects with both the curves of Fall and 
+Spring in between Mexico and US. This observation points out that there may be
+an Nationality-Seasonal interaction effect on the number of deaths. 
+
+# Model Proposal
+
+To determine whether the nations in North America and the seasons in a calendar 
+year have major effects on the number of deaths caused by COVID-19, we will be 
+using a balanced Two-Way ANOVA model. A balanced Two-Way ANOVA model in 
+factor-effect is written in the following form:
+\[
+   Y_{ijk} = \mu + \alpha_i + \beta_j + (\alpha \beta)_{ij} + \epsilon_{ijk}, 
+   \ i = 1, \dots, a; \ \
+   j = 1, \ldots, b; \ \ k = 1, \ldots, n_{ij}.
+\] 
+where, $\alpha_i$ is the fixed main effect of factor A at the $i$th level, 
+$\beta_j$ is the fixed main effect of factor B at the $j$th level, and 
+$(\alpha \beta)_{ij}$ is the interaction effect when factor A is at the $i$th 
+level and factor B is at the $j$th level. For this model to be valid, it must 
+have the following constraints:
+\[
+  \sum_{i=1}^a \alpha_i = 0, \ \ \ \ \sum_{j=1}^b \beta_j = 0, 
+\]
+\[
+  \sum_{i=1}^a (\alpha \beta)_{ij} = 0 \ \ \ \text{and} \ \ \ 
+  \sum_{j=1}^b (\alpha \beta)_{ij} = 0
+\]
+and it must meet the assumption that $\varepsilon_{ijk}$ are i.i.d. 
+(independently and identically distributed) as $N(0,\sigma^2)$. 
+
+A Two-Way Anova model is balance if the number of observation by two categories
+are equal. The following table displays the number of observations by season and 
+nationality.
+
+```{r echo=FALSE}
+table(covid_NA$Country_code,covid_NA$Season)
+```
+
+Notice that these number are slightly different. This is because both Spring 
+and Summer consist of two months with 31 days and one month with 30 days. The 
+number of observations are smallest for Winter since it contains the month 
+of February, which has the shortest number of days compared to all other months. 
+Since the observations are large and do not differ much in size, we can say the 
+a Two-Way ANOVA model applied to this data would be approximately balanced.
+
+I believe that this model is appropriate for my task on studying the effects
+nationality and season have on the COVID death numbers since Two-Way ANOVA 
+models give flexibility when the studying a quantitative variable using two 
+categorical variables. Moreover, Two-Way ANOVA provides the ability to test
+whether main effects of each of the two categorical variables are present in 
+the quantitative variable. Using a Two-Way ANOVA model for my question of 
+interest, we will have the following representations:
+
+* $Y_{ijk}$ is the cube-rooted number of deaths caused by COVID in the $i$th
+  nation during the $j$th season. 
+* $\alpha_i$ is the main factor effect of nationality at the $i$th nation 
+  for $i = 1,\ldots,a=3$ (three nations),
+* $\beta_j$ is the main effect of seasonality at the $j$th season for 
+  $j = 1, \ldots, b=4$ (four seasons), 
+* $(\alpha \beta)_{ij}$ is the interaction effect when of the $i$th nation 
+  and $j$th season.
+
+# Model Fitting
+
+Fitting a Two-Way ANOVA model using the cube-rooted number of COVID deaths, 
+nationality and Season, we obtain the following results:
+
+```{r echo=FALSE}
+anova_model <- aov(I(New_deaths)^(1/3)~Country_code*Season,data=covid_NA)
+summary(anova_model)
+```
+
+Note that the Country_code, Season, and the interaction between Country_Code and 
+season have corresponding $P$-values less than $2\times 10^{-16}$, which are very 
+small $P$-values. This indicates that there is sufficient evidence to conclude 
+that there are main effects from Nationality, main effects from Season, and 
+interaction effects present in the cube-rooted number of deaths caused by COVID. 
+
+# Model Diagnostics
+
+I will now explore plots involving the residuals from the Two-Way ANOVA to 
+see whether the model assumption that $\varepsilon_{ijk}$ are i.i.d as 
+$N(0,\sigma^2)$. 
+
+```{r echo=FALSE}
+par(mfrow=c(2,2))
+plot(anova_model,which=c(1,2))
+hist(anova_model$residuals,main="Histogram of Residuals",
+     ylab="Residuals")
+```
+
+Viewing the Residuals vs Fitted plot, one can see that variability among the 
+residuals are not necessarily the same. Furthermore, the red-line in this plot
+deviates slightly from the dash-line. This indicates that the error terms 
+do not necessarily have constance variance and mean 0. Looking at the Normal 
+Q-Q plot, it appears that most of the points are on the 
+gray dashed line. However, one can see that the points on the left deviate from
+the dashed-line. This indications that the distribution of the residuals is 
+slightly left-skewed. The histogram of the residuals shows that the distribution
+of the residual is slight left-skewed and looks to be almost symmetric. 
+Since the Two-Way ANOVA model that was fitted is approximately balanced, the 
+results obtained from the model fitting are pretty robust against the normality
+assumption and unequal variance. 
+
+```{r echo=FALSE}
+acf(anova_model$residuals,main="ACF plot of Residuals")
+```
+
+Since all bars shown in the plot stretch above the upper blue dashed-line, this
+suggests that the error terms are not necessarily dependent. One reason why 
+this is the case in my situation is because the data I'm working with are 
+time observations, which are not randomized. 
+
+# Discussion and Conclusion 
+
+Although it appears that model assumptions for the Two-Way ANOVA model that I 
+fit weren't necessarily, the results obtained from the fitting process are robust
+again most of these assumptions since the model is approximately balanced. Since
+the data im working with is time series data and observational data, thus making
+it difficult to correct for non-independence of the residuals. Although, the 
+model give supporting evidence that season has effects in the number of COVID deaths
+per day, there maybe be other factors along with season that may cause the 
+number of deaths to fluctuate. In the future, I would like to learn whether 
+there are other variables play a role in these numbers. Indeed, each season of 
+the year bring various challenges to these nations, such as cooler and warmer 
+temperatures and flu season, that may potentially cause the COVID death numbers 
+for these three nations to go up. 
+# References
+
+Kutner, M. H., Nachtsheim, C. J., Neter, J., &amp; Li, W. (2005). 
+Applied Linear Statistical Models / Michael H. Kutner ... et al.. McGraw-Hill Irwin.
+
+“Coronavirus Disease (COVID-19) Situation Reports.” World Health Organization, World Health Organization, https://www.who.int/emergencies/diseases/novel-coronavirus-2019/situation-reports. 
+
+# Appendix - R Code used {-}
+
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE}
+```
+
+# Acknowledgements
+
+* Used STA 232A notes for reference. 
